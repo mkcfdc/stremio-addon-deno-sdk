@@ -90,10 +90,10 @@ export function createAddonHandler({ manifest, get, encryptionSecret }: { manife
                     const decodedConfigStr = new TextDecoder().decode(plaintext);
                     config = JSON.parse(decodedConfigStr);
                     configFound = true; // Mark config as successfully found and parsed
-                    console.log("[Router] Successfully decrypted JWE config:", config);
+                    //console.log("[Router] Successfully decrypted JWE config:", config);
                 } catch (jweError) {
                     const message = jweError instanceof Error ? jweError.message : String(jweError);
-                    console.warn(`[Router] Failed to decrypt JWE config segment (${potentialConfigSegment}): ${message}`);
+                    //console.warn(`[Router] Failed to decrypt JWE config segment (${potentialConfigSegment}): ${message}`);
                     configFound = false; // Decryption failed
                 }
             } else {
@@ -102,7 +102,7 @@ export function createAddonHandler({ manifest, get, encryptionSecret }: { manife
                     const decodedConfigStr = new TextDecoder().decode(Uint8Array.from(atob(potentialConfigSegment), c => c.charCodeAt(0)));
                     config = JSON.parse(decodedConfigStr);
                     configFound = true; 
-                    console.log("[Router] Successfully parsed plain base64 config:", config);
+                    //console.log("[Router] Successfully parsed plain base64 config:", config);
                 } catch (_e) {
                     configFound = false; 
                 }
@@ -156,7 +156,7 @@ export function createAddonHandler({ manifest, get, encryptionSecret }: { manife
             const queryParams = parseUrlParams(request.url);
             const combinedExtra = { ...extra, ...queryParams };
 
-            console.log(`[Router] Request matched: resource=${resource}, type=${type}, id=${id}, extra=${JSON.stringify(combinedExtra)}, config=${JSON.stringify(config)}`);
+            //console.log(`[Router] Request matched: resource=${resource}, type=${type}, id=${id}, extra=${JSON.stringify(combinedExtra)}, config=${JSON.stringify(config)}`);
 
             try {
                 const validatedConfig = typeof config === 'object' && config !== null ? config as Record<string, unknown> : {};

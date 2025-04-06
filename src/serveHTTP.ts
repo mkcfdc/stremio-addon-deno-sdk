@@ -65,7 +65,7 @@ export async function serveHTTP(
             let encodedSegment: string;
 
             if (addonInterface.encryptionSecret) {
-                console.log("[API] Encrypting config with JWE...");
+                //console.log("[API] Encrypting config with JWE...");
                 const plaintext = new TextEncoder().encode(configJsonString);
                 const keyMaterial = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(addonInterface.encryptionSecret)); // Use renamed property
                 const key = new Uint8Array(keyMaterial);
@@ -73,15 +73,15 @@ export async function serveHTTP(
                   .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
                   .encrypt(key);
                 encodedSegment = btoa(jwe);
-                console.log("[API] Encryption successful.");
+                //console.log("[API] Encryption successful.");
             } else {
-                console.log("[API] No secret, using plain base64 encoding.");
+                //console.log("[API] No secret, using plain base64 encoding.");
                 encodedSegment = btoa(configJsonString);
             }
             headers.set('Content-Type', 'text/plain');
             return new Response(encodedSegment, { status: 200, headers });
         } catch (err) {
-            console.error("[API] Error encoding config:", err);
+            //console.error("[API] Error encoding config:", err);
             headers.set('Content-Type', 'text/plain');
             return new Response("Error encoding configuration", { status: 500, headers });
         }
