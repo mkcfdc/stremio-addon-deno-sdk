@@ -1,0 +1,21 @@
+{
+  "version": "4",
+  "specifiers": {
+    "jsr:@panva/jose@^6.0.10": "6.0.10",
+    "jsr:@std/path@^1.0.8": "1.0.8"
+  },
+  "jsr": {
+    "@panva/jose@6.0.10": {
+      "integrity": "bd6e916d7b0bdb34a76752c701aaa25828326885e199714ac81741b6caef7143"
+    },
+    "@std/path@1.0.8": {
+      "integrity": "548fa456bb6a04d3c1a1e7477986b6cffbce95102d0bb447c67c4ee70e0364be"
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "jsr:@panva/jose@^6.0.10",
+      "jsr:@std/path@^1.0.8"
+    ]
+  }
+}

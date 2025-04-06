@@ -1,0 +1,20 @@
+{
+  "name": "@mkcfdc/stremio-addon-sdk",
+  "version": "0.1.0",
+  "exports": "./src/mod.ts",
+  "license": "MIT",
+  "publish": {
+    "include": [
+      "src",
+      "deno.json",
+      "README.md"
+    ]
+  },
+  "tasks": {
+    "dev": "deno run --watch /src/main.ts"
+  },
+  "imports": {
+    "@panva/jose": "jsr:@panva/jose@^6.0.10",
+    "@std/path": "jsr:@std/path@^1.0.8"
+  }
+}
