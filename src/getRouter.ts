@@ -14,9 +14,7 @@ interface CacheHeaders {
 interface StreamResponse {
     streams?: Array<{
         url?: string;
-        behaviorHints?: {
-            filename?: string;
-        };
+        behaviorHints?: { filename?: string };
     }>;
     redirect?: string;
 }
@@ -35,7 +33,7 @@ function parseUrlParams(url: string): Record<string, string> {
 function setCorsHeaders(response: Response): Response {
     const headers = new Headers(response.headers);
     headers.set('Access-Control-Allow-Origin', '*');
-    headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS'); 
+    headers.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
     headers.set('Access-Control-Allow-Headers', 'Content-Type');
     return new Response(response.body, {
         status: response.status,
@@ -43,13 +41,21 @@ function setCorsHeaders(response: Response): Response {
     });
 }
 
-export function createAddonHandler({ manifest, get, encryptionSecret }: { manifest: Manifest; get: AddonGet; encryptionSecret?: string }) {
-    const manifestBuf = JSON.stringify(manifest); 
-
-    const hasConfig = (manifest.config || []).length > 0;
-    if (hasConfig && !(manifest.behaviorHints || {}).configurable) {
-        console.warn("manifest.config is set but manifest.behaviorHints.configurable is disabled");
-    }
+export function createAddonHandler({
+    manifest,
+    get,
+    encryptionSecret,
+}: {
+    // allow either a static manifest or a dynamic manifest generator
+    manifest: Manifest | ((params: Args) => Manifest);
+    get: AddonGet;
+    encryptionSecret?: string;
+}) {
+    // Helper to uniformly invoke manifest
+    const manifestFn =
+        typeof manifest === 'function'
+            ? (params: Args) => (manifest as (params: Args) => Manifest)(params)
+            : () => manifest as Manifest;
 
     return async (request: Request): Promise<Response> => {
         const url = new URL(request.url);
@@ -60,153 +66,124 @@ export function createAddonHandler({ manifest, get, encryptionSecret }: { manife
             return setCorsHeaders(new Response(null, { status: 204 }));
         }
 
-        // Handle favicon.ico requests explicitly
         if (rawPathname === '/favicon.ico') {
-            //console.log("[Router] Ignoring favicon.ico request");
             return setCorsHeaders(new Response(null, { status: 404 }));
         }
 
-        if (pathSegments.length > 0 && decodeURIComponent(pathSegments[pathSegments.length - 1]) === 'manifest.json') {
-            return setCorsHeaders(
-                new Response(manifestBuf, {
-                    headers: { 'Content-Type': 'application/json; charset=utf-8' }
-                })
-            );
-        }
-
+        // Parse config (JWE or base64)
         let config: unknown = null;
         let configFound = false;
-        let resourceSegments = pathSegments; 
+        let resourceSegments = pathSegments;
 
         if (pathSegments.length > 0) {
-            const potentialConfigSegment = pathSegments[0];
+            const segment = pathSegments[0];
             if (encryptionSecret) {
-                // --- Attempt JWE Decryption ---
                 try {
-                    const keyMaterial = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encryptionSecret));
-                    const key = new Uint8Array(keyMaterial);
-                    const jwe = atob(potentialConfigSegment); // Base64 decode first
+                    const keyMat = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encryptionSecret));
+                    const key = new Uint8Array(keyMat);
+                    const jwe = atob(segment);
                     const { plaintext } = await jose.compactDecrypt(jwe, key);
-                    const decodedConfigStr = new TextDecoder().decode(plaintext);
-                    config = JSON.parse(decodedConfigStr);
-                    configFound = true; // Mark config as successfully found and parsed
-                    //console.log("[Router] Successfully decrypted JWE config:", config);
-                } catch (jweError) {
-                    const message = jweError instanceof Error ? jweError.message : String(jweError);
-                    //console.warn(`[Router] Failed to decrypt JWE config segment (${potentialConfigSegment}): ${message}`);
-                    configFound = false; // Decryption failed
+                    config = JSON.parse(new TextDecoder().decode(plaintext));
+                    configFound = true;
+                } catch {
+                    configFound = false;
                 }
             } else {
-                // --- Attempt Plain Base64 + JSON Parsing (No Secret) ---
                 try {
-                    const decodedConfigStr = new TextDecoder().decode(Uint8Array.from(atob(potentialConfigSegment), c => c.charCodeAt(0)));
-                    config = JSON.parse(decodedConfigStr);
-                    configFound = true; 
-                    //console.log("[Router] Successfully parsed plain base64 config:", config);
-                } catch (_e) {
-                    configFound = false; 
+                    const decoded = new TextDecoder().decode(Uint8Array.from(atob(segment), c => c.charCodeAt(0)));
+                    config = JSON.parse(decoded);
+                    configFound = true;
+                } catch {
+                    configFound = false;
                 }
             }
         }
+        if (configFound) resourceSegments = pathSegments.slice(1);
 
-        if (configFound) {
-            resourceSegments = pathSegments.slice(1);
-        } else {
-            config = null; // Ensure config is null if not found/parsed
-            resourceSegments = pathSegments;
+        // Handle manifest.json dynamically
+        if (
+            pathSegments.length > 0 &&
+            pathSegments[pathSegments.length - 1] === 'manifest.json'
+        ) {
+            const dynamicManifest = manifestFn({ type: '', id: '', extra: {}, config: configFound && typeof config === 'object' ? config as Record<string, unknown> : {} });
+            return setCorsHeaders(
+                new Response(JSON.stringify(dynamicManifest), {
+                    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+                }),
+            );
         }
 
-
-        // Now parse the CORRECT resourceSegments for resource/type/id/extra
-        const resPathLen = resourceSegments.length;
+        // Parse resource/type/id/extra
+        const len = resourceSegments.length;
         let resource: string | undefined;
         let type: string | undefined;
         let id: string | undefined;
         let extra: Record<string, unknown> = {};
-        let isValidRequest = false;
+        let valid = false;
 
-        if (resPathLen >= 3) {
-            const lastSegmentRaw = resourceSegments[resPathLen - 1];
-            const secondLastSegmentRaw = resourceSegments[resPathLen - 2];
-
-            if (lastSegmentRaw.endsWith('.json') && resPathLen === 3) {
-                // Case: /<resource>/<type>/<id>.json
-                resource = decodeURIComponent(resourceSegments[0]);
-                type = decodeURIComponent(resourceSegments[1]);
-                id = decodeURIComponent(lastSegmentRaw.replace('.json', ''));
-                isValidRequest = true;
-            } else if (lastSegmentRaw.endsWith('.json') && resPathLen === 4) {
-                // Case: /<resource>/<type>/<id>/<extra>.json
-                resource = decodeURIComponent(resourceSegments[0]);
-                type = decodeURIComponent(resourceSegments[1]);
-                id = decodeURIComponent(secondLastSegmentRaw);
-                const extraStr = decodeURIComponent(lastSegmentRaw.replace('.json', ''));
-                try {
-                    extra = JSON.parse(extraStr);
-                } catch (e) {
-                    console.warn(`[Router] Failed to parse extra path segment as JSON: ${extraStr}`, e);
-                    extra = {};
-                }
-                isValidRequest = true;
+        if (len === 3 && resourceSegments[2].endsWith('.json')) {
+            [resource, type] = resourceSegments;
+            id = resourceSegments[2].replace('.json', '');
+            valid = true;
+        } else if (len === 4 && resourceSegments[3].endsWith('.json')) {
+            resource = resourceSegments[0];
+            type = resourceSegments[1];
+            id = resourceSegments[2];
+            try {
+                extra = JSON.parse(resourceSegments[3].replace('.json', ''));
+            } catch {
+                extra = {};
             }
+            valid = true;
         }
 
-        // If valid, process the request
-        if (isValidRequest && resource && type && id) {
-            const queryParams = parseUrlParams(request.url);
-            const combinedExtra = { ...extra, ...queryParams };
-
-            //console.log(`[Router] Request matched: resource=${resource}, type=${type}, id=${id}, extra=${JSON.stringify(combinedExtra)}, config=${JSON.stringify(config)}`);
-
+        if (valid && resource && type && id) {
+            const query = parseUrlParams(request.url);
+            const combinedExtra = { ...extra, ...query };
             try {
-                const validatedConfig = typeof config === 'object' && config !== null ? config as Record<string, unknown> : {};
-                const getArgs = { resource: resource as ShortManifestResource, type: type as ContentType, id, extra: combinedExtra, config: validatedConfig };
-                const resp = (await get(getArgs)) as StreamResponse & CacheHeaders;
+                const cfg = configFound && typeof config === 'object' ? config as Record<string, unknown> : {};
+                const args = { resource: resource as ShortManifestResource, type: type as ContentType, id, extra: combinedExtra, config: cfg };
+                const resp = (await get(args)) as StreamResponse & CacheHeaders;
 
-                // --- Response Handling ---
-                const cacheHeaders = [];
-                if (typeof resp.cacheMaxAge === 'number') {
-                    if (resp.cacheMaxAge > 31536000) console.warn('cacheMaxAge > 1 year');
-                    cacheHeaders.push(`max-age=${resp.cacheMaxAge}`);
-                }
-                if (typeof resp.staleRevalidate === 'number') cacheHeaders.push(`stale-while-revalidate=${resp.staleRevalidate}`);
-                if (typeof resp.staleError === 'number') cacheHeaders.push(`stale-if-error=${resp.staleError}`);
+                // Build cache header
+                const ch: string[] = [];
+                if (typeof resp.cacheMaxAge === 'number') ch.push(`max-age=${resp.cacheMaxAge}`);
+                if (typeof resp.staleRevalidate === 'number') ch.push(`stale-while-revalidate=${resp.staleRevalidate}`);
+                if (typeof resp.staleError === 'number') ch.push(`stale-if-error=${resp.staleError}`);
 
                 const headers = new Headers({ 'Content-Type': 'application/json; charset=utf-8' });
-                if (cacheHeaders.length > 0) headers.set('Cache-Control', `${cacheHeaders.join(', ')}, public`);
+                if (ch.length) headers.set('Cache-Control', `${ch.join(', ')}, public`);
 
                 if (resp.redirect) {
                     headers.set('Location', resp.redirect);
                     return setCorsHeaders(new Response(null, { status: 307, headers }));
                 }
 
-                if (resource === "stream" && resp.streams?.length && !warned.has("filename")) {
-                    const hasMissingFilename = resp.streams.some(s => s?.url && !s?.behaviorHints?.filename);
-                    if (hasMissingFilename) {
-                        warned.add("filename");
-                        console.warn("streams include stream.url but no behaviorHints.filename");
+                // Warn missing filename once
+                if (resource === 'stream' && Array.isArray(resp.streams)) {
+                    const missing = resp.streams.some(s => s.url && !s.behaviorHints?.filename);
+                    if (missing && !warned.has('filename')) {
+                        warned.add('filename');
+                        console.warn('streams include url but no behaviorHints.filename');
                     }
                 }
 
                 return setCorsHeaders(new Response(JSON.stringify(resp), { headers }));
             } catch (err) {
                 if ((err as any).noHandler) {
-                    console.log(`[Router] Handler not found for resource: ${resource}`);
-                    return setCorsHeaders(new Response(JSON.stringify({ err: "not found" }), { status: 404, headers: { 'Content-Type': 'application/json' } }));
-                } else {
-                    console.error("[Router] Error during handler execution:", err);
-                    return setCorsHeaders(new Response(JSON.stringify({ err: "handler error" }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
+                    return setCorsHeaders(new Response(JSON.stringify({ err: 'not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } }));
                 }
+                console.error('Handler error:', err);
+                return setCorsHeaders(new Response(JSON.stringify({ err: 'handler error' }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
             }
         }
 
-        // 4. Fallback to Not Found
-        console.log("[Router] Path did not match expected resource structure:", rawPathname);
+        // Fallback
         return setCorsHeaders(
-            new Response(JSON.stringify({ err: "not found" }), {
+            new Response(JSON.stringify({ err: 'not found' }), {
                 status: 404,
-                headers: { 'Content-Type': 'application/json' }
-            })
+                headers: { 'Content-Type': 'application/json' },
+            }),
         );
     };
 }
