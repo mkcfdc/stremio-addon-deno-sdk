@@ -98,7 +98,7 @@ export async function serveHTTP(
       }
     }
 
-    if (path === "/" || path === "/configure") {
+    if (path === "/" || path.endsWith("/configure")) {
       if (path === "/" && hasConfig) {
         return Response.redirect(`${url.origin}/configure`, 302);
       }
