@@ -6,7 +6,7 @@ export type ShortManifestResource = "catalog" | "meta" | "stream" | "subtitles" 
 
 export type Extra = "search" | "genre" | "skip";
 
-export type ContentType = "movie" | "series" | "channel" | "tv";
+export type ContentType = "movie" | "series" | "channel" | "tv" | "";
 
 
 export interface Args {
