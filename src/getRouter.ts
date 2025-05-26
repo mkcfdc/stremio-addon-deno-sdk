@@ -73,25 +73,42 @@ export function createAddonHandler({
         // Parse config (JWE or base64)
         let config: unknown = null;
         let configFound = false;
-        let resourceSegments = pathSegments;
+        let resourceSegments = pathSegments; // Initialize resourceSegments with full path
 
         if (pathSegments.length > 0) {
             const segment = pathSegments[0];
-            if (encryptionSecret) {
-                const keyMaterial = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encryptionSecret));
-                const cryptoKey = await crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['decrypt']);
-                const { plaintext } = await jose.compactDecrypt(segment, cryptoKey);
-                config = JSON.parse(new TextDecoder().decode(plaintext));
-            } else {
-                config = JSON.parse(atob(segment));
+            try {
+                if (encryptionSecret) {
+                    const keyMaterial = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encryptionSecret));
+                    const cryptoKey = await crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['decrypt']);
+                    const { plaintext } = await jose.compactDecrypt(segment, cryptoKey);
+                    config = JSON.parse(new TextDecoder().decode(plaintext));
+                } else {
+                    config = JSON.parse(atob(segment));
+                }
+                configFound = true; // Set to true only on successful parsing
+            } catch (e) {
+                // If parsing fails (e.g., invalid JWE, malformed base64, or not valid JSON),
+                // assume the segment is not a config and treat it as part of the resource path.
+                // console.warn('Failed to parse config segment:', e); // Optional: for debugging
+                config = null; // Ensure config is null if parsing fails
+                configFound = false; // Confirm config was not found
+                // resourceSegments remains pathSegments if parsing failed
             }
-        if (configFound) resourceSegments = pathSegments.slice(1);
+        }
+
+        // If config was successfully parsed, update resourceSegments to exclude the config segment
+        if (configFound) {
+            resourceSegments = pathSegments.slice(1);
+        }
 
         // Handle manifest.json dynamically
+        // Use resourceSegments here, as it's the remaining path after optional config
         if (
-            pathSegments.length > 0 &&
-            pathSegments[pathSegments.length - 1] === 'manifest.json'
+            resourceSegments.length > 0 &&
+            resourceSegments[resourceSegments.length - 1] === 'manifest.json'
         ) {
+            // configFound will now correctly reflect if a config was present and parsed
             const dynamicManifest = manifestFn({ type: '', id: '', extra: {}, config: configFound && typeof config === 'object' ? config as Record<string, unknown> : {} });
             return setCorsHeaders(
                 new Response(JSON.stringify(dynamicManifest), {
@@ -101,6 +118,7 @@ export function createAddonHandler({
         }
 
         // Parse resource/type/id/extra
+        // Now uses the correctly adjusted resourceSegments
         const len = resourceSegments.length;
         let resource: string | undefined;
         let type: string | undefined;
@@ -118,7 +136,8 @@ export function createAddonHandler({
             id = resourceSegments[2];
             try {
                 extra = JSON.parse(resourceSegments[3].replace('.json', ''));
-            } catch {
+            } catch (e) { // Added error variable for better debugging
+                // console.warn('Failed to parse extra segment as JSON:', e); // Optional: for debugging
                 extra = {};
             }
             valid = true;
@@ -128,6 +147,7 @@ export function createAddonHandler({
             const query = parseUrlParams(request.url);
             const combinedExtra = { ...extra, ...query };
             try {
+                // cfg now correctly reflects parsed config or an empty object
                 const cfg = configFound && typeof config === 'object' ? config as Record<string, unknown> : {};
                 const args = { resource: resource as ShortManifestResource, type: type as ContentType, id, extra: combinedExtra, config: cfg };
                 const resp = (await get(args)) as StreamResponse & CacheHeaders;
@@ -170,7 +190,7 @@ export function createAddonHandler({
             new Response(JSON.stringify({ err: 'not found' }), {
                 status: 404,
                 headers: { 'Content-Type': 'application/json' },
-            }),
+            })
         );
     };
 }
