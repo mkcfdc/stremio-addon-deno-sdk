@@ -63,18 +63,17 @@ export async function serveHTTP(
         const configJson = await req.json();
         const configJsonString = JSON.stringify(configJson);
         let encodedSegment: string;
-
+          
         if (addonInterface.encryptionSecret) {
-          const plaintext = new TextEncoder().encode(configJsonString);
-          const keyMaterial = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(addonInterface.encryptionSecret));
-          const key = new Uint8Array(keyMaterial);
-          const jwe = await new jose.CompactEncrypt(plaintext)
-            .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
-            .encrypt(key);
-          encodedSegment = btoa(jwe);
+            const plaintext = new TextEncoder().encode(configJsonString);
+            const keyMaterial = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(addonInterface.encryptionSecret));
+            const cryptoKey = await crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['encrypt']);
+            const jwe = await new jose.CompactEncrypt(plaintext).setProtectedHeader({ alg: 'dir', enc: 'A256GCM' }).encrypt(cryptoKey);
+            encodedSegment = jwe; 
         } else {
-          encodedSegment = btoa(configJsonString);
+            encodedSegment = btoa(configJsonString); 
         }
+          
         headers.set('Content-Type', 'text/plain');
         return new Response(encodedSegment, { status: 200, headers });
       } catch {
@@ -99,7 +98,7 @@ export async function serveHTTP(
       }
     }
 
-    if (path === "/" || path === "/configure") {
+    if (path === "/" || path.endsWith("/configure")) {
       if (path === "/" && hasConfig) {
         return Response.redirect(`${url.origin}/configure`, 302);
       }

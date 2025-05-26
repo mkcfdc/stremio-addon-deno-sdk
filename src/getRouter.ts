@@ -78,26 +78,13 @@ export function createAddonHandler({
         if (pathSegments.length > 0) {
             const segment = pathSegments[0];
             if (encryptionSecret) {
-                try {
-                    const keyMat = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encryptionSecret));
-                    const key = new Uint8Array(keyMat);
-                    const jwe = atob(segment);
-                    const { plaintext } = await jose.compactDecrypt(jwe, key);
-                    config = JSON.parse(new TextDecoder().decode(plaintext));
-                    configFound = true;
-                } catch {
-                    configFound = false;
-                }
+                const keyMaterial = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(encryptionSecret));
+                const cryptoKey = await crypto.subtle.importKey('raw', keyMaterial, { name: 'AES-GCM' }, false, ['decrypt']);
+                const { plaintext } = await jose.compactDecrypt(segment, cryptoKey);
+                config = JSON.parse(new TextDecoder().decode(plaintext));
             } else {
-                try {
-                    const decoded = new TextDecoder().decode(Uint8Array.from(atob(segment), c => c.charCodeAt(0)));
-                    config = JSON.parse(decoded);
-                    configFound = true;
-                } catch {
-                    configFound = false;
-                }
+                config = JSON.parse(atob(segment));
             }
-        }
         if (configFound) resourceSegments = pathSegments.slice(1);
 
         // Handle manifest.json dynamically

@@ -25,27 +25,15 @@ const initialManifest: Manifest = {
     },
   ],
   encryptionSecret: "long-known-phrase-like-a-password",
+  behaviorHints: {
+    configurable: true,
+    // configurationRequired: true,
+  },
 };
 
 // 2. Create the AddonBuilder
 const builder = new AddonBuilder(initialManifest);
 
-// 3. Override the manifest using user-provided config
-builder.defineManifestHandler(({ config }) => {
-  // config.quality comes from the UI selection
-  const quality = (config?.quality as string) || "1080p";
-
-  return {
-    id: initialManifest.id,
-    version: initialManifest.version,
-    name: `Deno Basic Example — ${quality}`,
-    description: initialManifest.description,
-    resources: initialManifest.resources,
-    types: initialManifest.types,
-    catalogs: initialManifest.catalogs,
-    config: initialManifest.config,
-  };
-});
 
 // 4. Define Stream Handler
 builder.defineStreamHandler(async (args: Args) => {
