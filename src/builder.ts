@@ -79,10 +79,11 @@ export class AddonBuilder {
     this.handlers[resource] = handler;
     return this;
   }
-  defineStreamHandler    = (h: AddonHandler) => this.defineResourceHandler('stream',    h);
-  defineMetaHandler      = (h: AddonHandler) => this.defineResourceHandler('meta',      h);
-  defineCatalogHandler   = (h: AddonHandler) => this.defineResourceHandler('catalog',   h);
-  defineSubtitlesHandler = (h: AddonHandler) => this.defineResourceHandler('subtitles', h);
+  
+  defineStreamHandler    = (h: AddonHandler): this => this.defineResourceHandler('stream',    h);
+  defineMetaHandler      = (h: AddonHandler): this => this.defineResourceHandler('meta',      h);
+  defineCatalogHandler   = (h: AddonHandler): this => this.defineResourceHandler('catalog',   h);
+  defineSubtitlesHandler = (h: AddonHandler): this => this.defineResourceHandler('subtitles', h);
 
   /**
    * Build the interface, ensuring handlers match the manifest (using empty params for validation)
@@ -129,7 +130,7 @@ export class AddonInterface {
   /**
    * Dispatch resource requests
    */
-  get(args: { resource: ShortManifestResource } & Args) {
+  get(args: { resource: ShortManifestResource } & Args): Promise<unknown> {
     const { resource, type, id, extra, config } = args;
     const handler = this.handlers[resource];
     if (!handler) {
