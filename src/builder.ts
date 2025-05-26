@@ -49,7 +49,7 @@ export class AddonBuilder {
       : this.staticManifest;
   }
 
-  private validateHandlers(): Error[] {
+private validateHandlers(): Error[] {
     const errors: Error[] = [];
     const resList: string[] = [];
     const manifest = this.getManifest({ type: '', id: '', extra: {}, config: {} });
@@ -57,11 +57,7 @@ export class AddonBuilder {
     manifest.resources?.forEach(r => resList.push(typeof r === 'string' ? r : r.name));
 
     const defined = Object.keys(this.handlers);
-    defined.forEach(key => {
-      if (!resList.includes(key)) {
-        errors.push(new Error(`manifest.resources does not contain: ${key}`));
-      }
-    });
+
     resList.forEach(key => {
       if (!defined.includes(key)) {
         const cap = key[0].toUpperCase() + key.slice(1);
@@ -79,7 +75,7 @@ export class AddonBuilder {
     this.handlers[resource] = handler;
     return this;
   }
-  
+
   defineStreamHandler    = (h: AddonHandler): this => this.defineResourceHandler('stream',    h);
   defineMetaHandler      = (h: AddonHandler): this => this.defineResourceHandler('meta',      h);
   defineCatalogHandler   = (h: AddonHandler): this => this.defineResourceHandler('catalog',   h);
